@@ -14,19 +14,30 @@ categories = FCN_ResNet101_Weights.COCO_WITH_VOC_LABELS_V1.meta["categories"]
 
 class_to_idx = dict(zip(categories, range(len(categories))))
 
-@st.cache_resource
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def load_model():
     fcn_resnet = fcn_resnet101(weights=weights)
-    fcn_resnet.eval()
+    fcn_resnet.eval().to(device)
     return fcn_resnet
 
 model = load_model()
 
+def downscale_image(pil_img, max_size=1024):
+    """Resize image to max_size while preserving aspect ratio."""
+    width, height = pil_img.size
+    if max(width, height) > max_size:
+        scale = max_size / max(width, height)
+        new_size = (int(width * scale), int(height * scale))
+        pil_img = pil_img.resize(new_size, Image.LANCZOS)
+    return pil_img
+
 def make_prediction(processed_img):
-    preds = model(processed_img.unsqueeze(dim=0))
-    normalized_preds = preds["out"].squeeze().softmax(dim=0)
-    masks = normalized_preds > 0.7
+    processed_img = processed_img.to(device)
+    with torch.no_grad():  # Disable gradient calculation for inference
+        preds = model(processed_img.unsqueeze(0))
+        normalized_preds = preds["out"].squeeze().softmax(dim=0)
+        masks = normalized_preds > 0.5
     return masks
 
 def add_transparent_alpha_channel(pil_img):
@@ -48,15 +59,21 @@ bgremoved_image = []
 if uploaded:
     for upload in uploaded:
         img = Image.open(upload)
+
+        img = downscale_image(img, max_size=512)
+
         original_image.append(img)
-        img_tensor = torch.tensor(np.array(img).transpose(2,0,1))
+        img_tensor = torch.tensor(np.array(img).transpose(2,0,1), dtype=torch.float16) / 255
         processed_img = preprocess_func(img_tensor)
         masks = make_prediction(processed_img)
 
-        img_with_bg_removed = draw_segmentation_masks(img_tensor, masks=masks[class_to_idx["__background__"]], alpha=1.0, colors="white")
-        img_with_bg_removed = to_pil_image(img_with_bg_removed)
+        img_with_bg_removed = draw_segmentation_masks(img_tensor.to(device), masks=masks[class_to_idx["__background__"]], alpha=1.0, colors="white")
+        img_with_bg_removed = to_pil_image(img_with_bg_removed.cpu())
         img_with_bg_removed = add_transparent_alpha_channel(img_with_bg_removed)
         bgremoved_image.append(img_with_bg_removed)
+
+        del img_tensor, processed_img, masks, img_with_bg_removed
+        torch.cuda.empty_cache()
 
     col1, col2 = st.columns(2, gap="medium")
     with col1:
