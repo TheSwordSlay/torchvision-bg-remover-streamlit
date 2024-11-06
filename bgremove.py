@@ -4,6 +4,8 @@ import torch
 from torchvision.models.segmentation import fcn_resnet101, FCN_ResNet101_Weights
 from torchvision.utils import draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
+import zipfile
+from io import BytesIO
 
 import numpy as np
 from PIL import Image
@@ -24,7 +26,6 @@ def load_model():
 model = load_model()
 
 def downscale_image(pil_img, max_size=1024):
-    """Resize image to max_size while preserving aspect ratio."""
     width, height = pil_img.size
     if max(width, height) > max_size:
         scale = max_size / max(width, height)
@@ -63,7 +64,7 @@ if uploaded:
         img = downscale_image(img, max_size=512)
 
         original_image.append(img)
-        img_tensor = torch.tensor(np.array(img).transpose(2,0,1), dtype=torch.float16) / 255
+        img_tensor = torch.tensor(np.array(img).transpose(2,0,1)) / 255
         processed_img = preprocess_func(img_tensor)
         masks = make_prediction(processed_img)
 
@@ -85,6 +86,22 @@ if uploaded:
         st.subheader("without background")
         for image in bgremoved_image:
             st.image(image)
+
+    if bgremoved_image:
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+            for idx, img in enumerate(bgremoved_image):
+                img_buffer = BytesIO()
+                img.save(img_buffer, format="PNG")
+                zip_file.writestr(f"bg_removed_{idx + 1}.png", img_buffer.getvalue())
+        
+        zip_buffer.seek(0)
+        st.download_button(
+            label="Download All Removed Background Images",
+            data=zip_buffer,
+            file_name="bg_removed_images.zip",
+            mime="application/zip"
+        )
 
 
     
