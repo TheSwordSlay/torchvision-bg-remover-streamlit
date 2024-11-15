@@ -25,7 +25,8 @@ def load_model():
 
 model = load_model()
 
-def downscale_image(pil_img, max_size=1024):
+def downscale_image(pil_img):
+    max_size=1024
     width, height = pil_img.size
     if max(width, height) > max_size:
         scale = max_size / max(width, height)
@@ -61,7 +62,7 @@ if uploaded:
     for upload in uploaded:
         img = Image.open(upload)
 
-        img = downscale_image(img, max_size=512)
+        img = downscale_image(img)
 
         original_image.append(img)
         img_tensor = torch.tensor(np.array(img).transpose(2,0,1)) / 255
